@@ -40,19 +40,14 @@ class Ranger(Optimizer):
         # beta1 (momentum) of .95 seems to work better than .90...
         #N_sma_threshold of 5 seems better in testing than 4.
         #In both cases, worth testing on your dataset (.90 vs .95, 4 vs 5) to make sure which works best for you.
+        # @TODO Implement the above testing with AX ^
 
         #prep defaults and init torch.optim base
-        defaults = dict(lr=lr, alpha=alpha, k=k, step_counter=0, betas=betas, N_sma_threshhold=N_sma_threshhold, eps=eps, weight_decay=weight_decay)
+        defaults = dict(lr=lr, alpha=alpha, k=k, betas=betas, N_sma_threshhold=N_sma_threshhold, eps=eps, weight_decay=weight_decay)
         super().__init__(params,defaults)
 
         #adjustable threshold
         self.N_sma_threshhold = N_sma_threshhold
-
-        #now we can get to work...
-        #removed as we now use step from RAdam...no need for duplicate step counting
-        #for group in self.param_groups:
-        #    group["step_counter"] = 0
-            #print("group step counter init")
 
         #look ahead params
         self.alpha = alpha
