@@ -3,17 +3,17 @@
 
 #Ranger has now been used to capture 12 records on the FastAI leaderboard.
 
-#This version = 9.3.19  
+#This version = 9.3.19
 
 #Credits:
 #RAdam -->  https://github.com/LiyuanLucasLiu/RAdam
 #Lookahead --> rewritten by lessw2020, but big thanks to Github @LonePatient and @RWightman for ideas from their code.
 #Lookahead paper --> MZhang,G Hinton  https://arxiv.org/abs/1907.08610
 
-#summary of changes: 
-#full code integration with all updates at param level instead of group, moves slow weights into state dict (from generic weights), 
+#summary of changes:
+#full code integration with all updates at param level instead of group, moves slow weights into state dict (from generic weights),
 #supports group learning rates (thanks @SHolderbach), fixes sporadic load from saved model issues.
-#changes 8/31/19 - fix references to *self*.N_sma_threshold; 
+#changes 8/31/19 - fix references to *self*.N_sma_threshold;
                 #changed eps to 1e-5 as better default than 1e-8.
 
 import math
@@ -51,10 +51,10 @@ class Ranger(Optimizer):
 
         #look ahead params
         self.alpha = alpha
-        self.k = k 
+        self.k = k
 
         #radam buffer for state
-        self.radam_buffer = [[None,None,None] for ind in range(10)]
+        self.radam_buffer = [[None,None,None] for ind in range(k)]
 
 
     def __setstate__(self, state):
@@ -63,43 +63,37 @@ class Ranger(Optimizer):
 
     def step(self, closure=None):
         loss = None
-        #note - below is commented out b/c I have other work that passes back the loss as a float, and thus not a callable closure.  
-        #Uncomment if you need to use the actual closure...
 
-        #if closure is not None:
-            #loss = closure()
+        if closure is not None:
+            loss = closure()
 
         #Evaluate averages and grad, update param tensors
         for group in self.param_groups:
-
             for p in group['params']:
-                if p.grad is None:
-                    continue
-                grad = p.grad.data.float()
-                if grad.is_sparse:
-                    raise RuntimeError('Ranger optimizer does not support sparse gradients')
+                if p.grad is not None:
+                    grad = p.grad.data.float()
+                    if grad.is_sparse:
+                        raise RuntimeError('Ranger optimizer does not support sparse gradients')
 
-                p_data_fp32 = p.data.float()
+                    p_data_fp32 = p.data.float()
 
-                state = self.state[p]  #get state dict for this param
+                    state = self.state[p]  #get state dict for this param
 
-                if len(state) == 0:   #if first time to run...init dictionary with our desired entries
-                    #if self.first_run_check==0:
-                        #self.first_run_check=1
-                        #print("Initializing slow buffer...should not see this at load from saved model!")
-                    state['step'] = 0
-                    state['exp_avg'] = torch.zeros_like(p_data_fp32)
-                    state['exp_avg_sq'] = torch.zeros_like(p_data_fp32)
+                    # On the first run initialize the dictionary for each weight group
+                    if len(state) == 0:
+                        state['step'] = 0
+                        state['exp_avg'] = torch.zeros_like(p_data_fp32)
+                        state['exp_avg_sq'] = torch.zeros_like(p_data_fp32)
 
-                    #look ahead weight storage now in state dict 
-                    state['slow_buffer'] = torch.empty_like(p.data)
-                    state['slow_buffer'].copy_(p.data)
+                        #look ahead weight storage now in state dict
+                        state['slow_buffer'] = torch.empty_like(p.data)
+                        state['slow_buffer'].copy_(p.data)
+                    # @TODO Couldn't this branch happen after the if above is entered in thus replacing torch.zero_like) ??
+                    else:
+                        state['exp_avg'] = state['exp_avg'].type_as(p_data_fp32)
+                        state['exp_avg_sq'] = state['exp_avg_sq'].type_as(p_data_fp32)
 
-                else:
-                    state['exp_avg'] = state['exp_avg'].type_as(p_data_fp32)
-                    state['exp_avg_sq'] = state['exp_avg_sq'].type_as(p_data_fp32)
-
-                #begin computations 
+                #begin computations
                 exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
                 beta1, beta2 = group['betas']
 
@@ -110,8 +104,8 @@ class Ranger(Optimizer):
 
                 state['step'] += 1
 
+                buffered = self.radam_buffer[int(state['step'] % group['k'])]
 
-                buffered = self.radam_buffer[int(state['step'] % 10)]
                 if state['step'] == buffered[0]:
                     N_sma, step_size = buffered[1], buffered[2]
                 else:
@@ -140,8 +134,9 @@ class Ranger(Optimizer):
                 #integrated look ahead...
                 #we do it at the param level instead of group level
                 if state['step'] % group['k'] == 0:
-                    slow_p = state['slow_buffer'] #get access to slow param tensor
-                    slow_p.add_(self.alpha, p.data - slow_p)  #(fast weights - slow weights) * alpha
-                    p.data.copy_(slow_p)  #copy interpolated weights to RAdam param tensor
+                    slow_p = state['slow_buffer']
+                    # Find the interpolated weight between the slower buffer (the weight `k` steps ago) and the current weight, set that as the state for RAdam
+                    slow_p.add_(self.alpha, p.data - slow_p)
+                    p.data.copy_(slow_p)
 
         return loss
