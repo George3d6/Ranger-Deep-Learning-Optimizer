@@ -54,7 +54,7 @@ class Ranger(Optimizer):
         self.k = k
 
         #radam buffer for state
-        self.radam_buffer = [[None,None,None] for ind in range(k)]
+        self.radam_buffer = [[None,None,None] for ind in range(10)]
 
 
     def __setstate__(self, state):
@@ -104,7 +104,7 @@ class Ranger(Optimizer):
 
                 state['step'] += 1
 
-                buffered = self.radam_buffer[int(state['step'] % group['k'])]
+                buffered = self.radam_buffer[int(state['step'] % 10)]
 
                 if state['step'] == buffered[0]:
                     N_sma, step_size = buffered[1], buffered[2]
