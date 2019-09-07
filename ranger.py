@@ -56,21 +56,8 @@ class Ranger(Optimizer):
         #radam buffer for state
         self.radam_buffer = [[None,None,None] for ind in range(10)]
 
-        #self.first_run_check=0
-
-        #lookahead weights
-        #9/2/19 - lookahead param tensors have been moved to state storage.  
-        #This should resolve issues with load/save where weights were left in GPU memory from first load, slowing down future runs.
-
-        #self.slow_weights = [[p.clone().detach() for p in group['params']]
-        #                     for group in self.param_groups]
-
-        #don't use grad for lookahead weights
-        #for w in it.chain(*self.slow_weights):
-        #    w.requires_grad = False
 
     def __setstate__(self, state):
-        print("set state called")
         super(Ranger, self).__setstate__(state)
 
 
