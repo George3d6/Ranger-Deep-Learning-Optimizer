@@ -18,14 +18,12 @@
 
 import math
 import torch
-from torch.optim.optimizer import Optimizer, required
-import itertools as it
+from torch.optim.optimizer import Optimizer
 
 
 
 class Ranger(Optimizer):
-
-    def __init__(self, params, lr=1e-3, alpha=0.5, k=6, N_sma_threshhold=5, betas=(.95,0.999), eps=1e-5, weight_decay=0):
+    def __init__(self, params, lr=0.001, alpha=0.5, k=6, N_sma_threshold=5, betas=(.95,0.999), eps=1e-5, weight_decay=0):
         #parameter checks
         if not 0.0 <= alpha <= 1.0:
             raise ValueError(f'Invalid slow update rate: {alpha}')
@@ -40,16 +38,16 @@ class Ranger(Optimizer):
         # beta1 (momentum) of .95 seems to work better than .90...
         #N_sma_threshold of 5 seems better in testing than 4.
         #In both cases, worth testing on your dataset (.90 vs .95, 4 vs 5) to make sure which works best for you.
-        # @TODO Implement the above testing with AX ^
 
         #prep defaults and init torch.optim base
-        defaults = dict(lr=lr, alpha=alpha, k=k, betas=betas, N_sma_threshhold=N_sma_threshhold, eps=eps, weight_decay=weight_decay)
+        defaults = dict(lr=lr, alpha=alpha, k=k, betas=betas, N_sma_threshold=N_sma_threshold, eps=eps, weight_decay=weight_decay)
         super().__init__(params,defaults)
 
         #adjustable threshold
-        self.N_sma_threshhold = N_sma_threshhold
+        self.N_sma_threshold = N_sma_threshold
 
         #look ahead params
+        self.initial_lr = lr
         self.alpha = alpha
         self.k = k
 
@@ -114,7 +112,7 @@ class Ranger(Optimizer):
                     N_sma_max = 2 / (1 - beta2) - 1
                     N_sma = N_sma_max - 2 * state['step'] * beta2_t / (1 - beta2_t)
                     buffered[1] = N_sma
-                    if N_sma > self.N_sma_threshhold:
+                    if N_sma > self.N_sma_threshold:
                         step_size = math.sqrt((1 - beta2_t) * (N_sma - 4) / (N_sma_max - 4) * (N_sma - 2) / N_sma * N_sma_max / (N_sma_max - 2)) / (1 - beta1 ** state['step'])
                     else:
                         step_size = 1.0 / (1 - beta1 ** state['step'])
@@ -123,7 +121,7 @@ class Ranger(Optimizer):
                 if group['weight_decay'] != 0:
                     p_data_fp32.add_(-group['weight_decay'] * group['lr'], p_data_fp32)
 
-                if N_sma > self.N_sma_threshhold:
+                if N_sma > self.N_sma_threshold:
                     denom = exp_avg_sq.sqrt().add_(group['eps'])
                     p_data_fp32.addcdiv_(-step_size * group['lr'], exp_avg, denom)
                 else:
